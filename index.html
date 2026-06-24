@@ -30,7 +30,8 @@ import {
   Eye,
   LogOut,
   ShieldCheck,
-  AlertCircle
+  AlertCircle,
+  Settings
 } from 'lucide-react';
 
 // --- Firebase Initialization ---
@@ -62,8 +63,11 @@ const formatTimestamp = (timestamp, includeTime = false) => {
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState('dashboard'); // dashboard, signers, upload, verify
+  const [view, setView] = useState('dashboard'); // dashboard, signers, upload, verify, settings
   
+  // Google Apps Script URL State (Disimpan di Local Storage)
+  const [gasUrl, setGasUrl] = useState(localStorage.getItem('gasUrl') || '');
+
   // Data States
   const [signers, setSigners] = useState([]);
   const [documents, setDocuments] = useState([]);
@@ -223,6 +227,13 @@ export default function App() {
             <ShieldCheck className="w-5 h-5" />
             <span>Verifikasi Manual</span>
           </button>
+          <button 
+            onClick={() => setView('settings')}
+            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${view === 'settings' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
+          >
+            <Settings className="w-5 h-5" />
+            <span>Integrasi Google</span>
+          </button>
         </nav>
         <div className="p-4 border-t border-slate-700 text-xs text-slate-500">
           ID Pengguna: {user.uid.substring(0, 8)}...
@@ -233,7 +244,8 @@ export default function App() {
       <main className="flex-1 overflow-y-auto p-8">
         {view === 'dashboard' && <Dashboard documents={documents} signers={signers} />}
         {view === 'signers' && <SignersManager user={user} signers={signers} />}
-        {view === 'upload' && <UploadDocument user={user} signers={signers} setView={setView} />}
+        {view === 'upload' && <UploadDocument user={user} signers={signers} setView={setView} gasUrl={gasUrl} />}
+        {view === 'settings' && <IntegrationSettings gasUrl={gasUrl} setGasUrl={setGasUrl} />}
         {view === 'verify' && !new URLSearchParams(window.location.search).get('verify') && (
           <div className="max-w-2xl mx-auto">
             <h2 className="text-2xl font-bold text-gray-800 mb-6">Verifikasi Dokumen Manual</h2>
@@ -264,6 +276,48 @@ export default function App() {
 // ==========================================
 // VIEW COMPONENTS
 // ==========================================
+
+function IntegrationSettings({ gasUrl, setGasUrl }) {
+  const handleSave = (e) => {
+    e.preventDefault();
+    localStorage.setItem('gasUrl', gasUrl);
+    alert('URL Web App Google Apps Script berhasil disimpan!');
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto">
+      <h2 className="text-2xl font-bold text-gray-800 mb-6">Integrasi Google Workspace</h2>
+      <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100">
+        <div className="flex items-center space-x-4 mb-6">
+          <div className="p-3 bg-green-100 text-green-600 rounded-full">
+            <Settings className="w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-gray-800">Koneksi Google Drive & Sheets</h3>
+            <p className="text-sm text-gray-500">Simpan arsip langsung ke Drive dan catat ke Spreadsheet secara otomatis.</p>
+          </div>
+        </div>
+        
+        <form onSubmit={handleSave} className="space-y-4">
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">URL Google Apps Script (Web App)</label>
+            <input 
+              type="url" 
+              value={gasUrl} 
+              onChange={e => setGasUrl(e.target.value)}
+              placeholder="https://script.google.com/macros/s/.../exec"
+              className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-green-500 outline-none font-mono text-sm"
+            />
+            <p className="text-xs text-gray-500 mt-2">Masukkan URL hasil Deploy Web App dari Google Apps Script Anda untuk mengaktifkan fitur ini.</p>
+          </div>
+          <button type="submit" className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 font-medium">
+            Simpan Konfigurasi
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 function Dashboard({ documents, signers }) {
   return (
@@ -453,11 +507,12 @@ function SignersManager({ user, signers }) {
   );
 }
 
-function UploadDocument({ user, signers, setView }) {
+function UploadDocument({ user, signers, setView, gasUrl }) {
   const [title, setTitle] = useState('');
   const [signerId, setSignerId] = useState('');
   const [fileBase64, setFileBase64] = useState('');
   const [fileName, setFileName] = useState('');
+  const [fileType, setFileType] = useState('');
   const [loading, setLoading] = useState(false);
   const [successDoc, setSuccessDoc] = useState(null);
 
@@ -465,14 +520,17 @@ function UploadDocument({ user, signers, setView }) {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Limit file size to ~700KB because Firestore document limit is 1MB
-    if (file.size > 700 * 1024) {
-      alert("Maaf, untuk versi demo ini ukuran file maksimal 700KB. Gunakan file PDF atau Gambar kecil.");
+    // Limit ukuran file membesar menjadi 5MB jika terhubung ke Google Drive
+    const sizeLimit = gasUrl ? 5 * 1024 * 1024 : 700 * 1024;
+    
+    if (file.size > sizeLimit) {
+      alert(`Maaf, ukuran file maksimal ${gasUrl ? '5MB' : '700KB'}.`);
       e.target.value = '';
       return;
     }
 
     setFileName(file.name);
+    setFileType(file.type);
     const reader = new FileReader();
     reader.onloadend = () => {
       setFileBase64(reader.result);
@@ -489,6 +547,40 @@ function UploadDocument({ user, signers, setView }) {
     setLoading(true);
     try {
       const selectedSigner = signers.find(s => s.id === signerId);
+      let finalFileData = fileBase64;
+      let isDriveLink = false;
+
+      // 1. UPLOAD KE GOOGLE DRIVE & SHEETS JIKA URL GAS TERSEDIA
+      if (gasUrl) {
+        try {
+          // Melakukan request POST tanpa header Content-Type khusus agar tidak terkena bloking preflight CORS ketat
+          const gasResponse = await fetch(gasUrl, {
+            method: 'POST',
+            body: JSON.stringify({
+              title: title,
+              signerName: selectedSigner.name,
+              signerRole: selectedSigner.role,
+              fileName: fileName,
+              mimeType: fileType,
+              fileData: fileBase64
+            })
+          });
+          
+          const gasResult = await gasResponse.json();
+          if (gasResult.success) {
+            finalFileData = gasResult.fileUrl; // Mengganti teks panjang base64 dengan Link URL Drive
+            isDriveLink = true;
+          } else {
+            console.error("GAS Error Response:", gasResult.error);
+            alert("Gagal menyimpan ke Google Workspace. Melanjutkan simpan ke penyimpanan lokal sementara...");
+          }
+        } catch (gasError) {
+          console.error("GAS Fetch error:", gasError);
+          alert("Gagal menghubungi Google Apps Script. Melanjutkan simpan ke penyimpanan lokal sementara...");
+        }
+      }
+
+      // 2. SIMPAN META DATA KE FIRESTORE (Agar tetap muncul di dashboard & QR Verifikasi instan)
       const docsRef = collection(db, 'artifacts', appId, 'public', 'data', 'documents');
       
       const docData = {
@@ -498,7 +590,8 @@ function UploadDocument({ user, signers, setView }) {
         signerRole: selectedSigner.role,
         uploaderId: user.uid,
         fileName,
-        fileData: fileBase64, // Simulating Google Drive upload by storing base64
+        fileData: finalFileData, 
+        isDriveLink: isDriveLink,
         timestamp: serverTimestamp(),
       };
 
@@ -575,8 +668,16 @@ function UploadDocument({ user, signers, setView }) {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <h2 className="text-2xl font-bold text-gray-800 mb-6">Arsipkan & Buat QR Tanda Tangan</h2>
+      <h2 className="text-2xl font-bold text-gray-800 mb-2">Arsipkan & Buat QR Tanda Tangan</h2>
       
+      {gasUrl ? (
+         <p className="text-sm text-green-600 font-medium mb-6 flex items-center">
+           <Settings className="w-4 h-4 mr-1" /> Terhubung ke Google Drive & Spreadsheet (Maks 5MB)
+         </p>
+      ) : (
+         <p className="text-sm text-gray-500 mb-6">Penyimpanan Cloud Sementara (Maks 700KB)</p>
+      )}
+
       {signers.length === 0 ? (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-lg flex items-center">
           <AlertCircle className="w-5 h-5 mr-3" />
@@ -622,12 +723,16 @@ function UploadDocument({ user, signers, setView }) {
               <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center">
                 <Upload className="w-10 h-10 text-gray-400 mb-3" />
                 <span className="text-blue-600 font-medium">Klik untuk pilih file</span>
-                <span className="text-xs text-gray-500 mt-1">Maks. 700KB (Untuk demo)</span>
+                <span className="text-xs text-gray-500 mt-1">
+                  Maks. {gasUrl ? '5MB (Drive)' : '700KB (Untuk demo)'}
+                </span>
                 {fileName && <span className="mt-4 text-sm font-semibold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">{fileName}</span>}
               </label>
             </div>
             <p className="text-xs text-gray-500 mt-2">
-              *Dalam sistem produksi nyata, file ini akan disimpan ke Google Drive / Cloud Storage secara otomatis.
+              {gasUrl 
+                ? "*File ini akan diunggah otomatis ke Google Drive Anda dan dicatat ke Spreadsheet." 
+                : "*Dalam sistem produksi nyata, file ini akan disimpan ke Google Drive / Cloud Storage secara otomatis."}
             </p>
           </div>
 
@@ -731,15 +836,19 @@ function VerificationView({ doc, loading, isEmbedded = false }) {
               <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 flex flex-col items-center justify-center p-8">
                 <FileText className="w-16 h-16 text-slate-300 mb-4" />
                 <p className="font-medium text-slate-700">{doc.fileName}</p>
-                <p className="text-sm text-slate-500 mb-6">Dokumen tersimpan dengan aman di Cloud.</p>
+                <p className="text-sm text-slate-500 mb-6">
+                  {doc.isDriveLink ? 'Dokumen arsip fisik tersimpan aman di Google Drive.' : 'Dokumen tersimpan dengan aman di Cloud.'}
+                </p>
                 
                 <a 
                   href={doc.fileData} 
-                  download={doc.fileName}
+                  target={doc.isDriveLink ? "_blank" : "_self"}
+                  rel={doc.isDriveLink ? "noopener noreferrer" : ""}
+                  download={!doc.isDriveLink ? doc.fileName : undefined}
                   className="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition flex items-center shadow-md"
                 >
                   <Eye className="w-5 h-5 mr-2" />
-                  Lihat / Unduh Dokumen
+                  Lihat Arsip Dokumen
                 </a>
               </div>
             </div>
