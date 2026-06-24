@@ -1,388 +1,752 @@
-<!DOCTYPE html>
-<html lang="id">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Web Watermark Foto Kegiatan</title>
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f4f7f6;
-            margin: 0;
-            padding: 20px;
-            color: #333;
-        }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: #fff;
-            padding: 25px;
-            border-radius: 10px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        }
-        h2 {
-            text-align: center;
-            color: #2c3e50;
-            margin-top: 0;
-        }
-        .grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
-        }
-        .form-group {
-            margin-bottom: 15px;
-        }
-        .form-group.full-width {
-            grid-column: span 2;
-        }
-        label {
-            display: block;
-            font-weight: bold;
-            margin-bottom: 5px;
-            color: #34495e;
-            font-size: 14px;
-        }
-        input[type="text"], input[type="file"] {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #ccd1d9;
-            border-radius: 5px;
-            box-sizing: border-box;
-            font-size: 14px;
-        }
-        input[type="text"]:focus {
-            border-color: #3498db;
-            outline: none;
-        }
-        .canvas-container {
-            margin-top: 20px;
-            text-align: center;
-        }
-        canvas {
-            max-width: 100%;
-            height: auto;
-            border: 1px dashed #bdc3c7;
-            border-radius: 5px;
-            background-color: #ecf0f1;
-        }
-        .btn {
-            display: block;
-            width: 100%;
-            color: white;
-            text-align: center;
-            padding: 12px;
-            border: none;
-            border-radius: 5px;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: background 0.3s ease;
-            margin-bottom: 10px; /* Added margin between buttons */
-        }
-        .btn-download {
-            background-color: #27ae60;
-            margin-top: 20px;
-        }
-        .btn-download:hover { background-color: #2ecc71; }
-        
-        .btn-share {
-            background-color: #25D366; /* WhatsApp Green */
-        }
-        .btn-share:hover { background-color: #128C7E; }
+import React, { useState, useEffect, useRef } from 'react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getAuth, 
+  signInAnonymously, 
+  signInWithCustomToken, 
+  onAuthStateChanged 
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  collection, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  onSnapshot, 
+  query, 
+  addDoc, 
+  serverTimestamp,
+  deleteDoc
+} from 'firebase/firestore';
+import { 
+  QrCode, 
+  FileText, 
+  Users, 
+  Upload, 
+  CheckCircle, 
+  Search, 
+  Plus, 
+  Trash2, 
+  Eye,
+  LogOut,
+  ShieldCheck,
+  AlertCircle
+} from 'lucide-react';
 
-        .btn-location {
-            background-color: #2980b9;
-            margin-bottom: 15px;
-        }
-        .btn-location:hover { background-color: #3498db; }
-        .btn-location:disabled {
-            background-color: #95a5a6;
-            cursor: not-allowed;
-        }
+// --- Firebase Initialization ---
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-        .section-title {
-            grid-column: span 2;
-            margin-top: 10px;
-            margin-bottom: -5px;
-            color: #e67e22;
-            font-size: 16px;
-            border-bottom: 1px solid #eee;
-            padding-bottom: 5px;
-        }
-        
-        /* Responsive for mobile */
-        @media (max-width: 600px) {
-            .grid { grid-template-columns: 1fr; }
-            .form-group.full-width, .section-title { grid-column: span 1; }
-        }
-    </style>
-</head>
-<body>
+// Helper Format Waktu yang Aman
+const formatTimestamp = (timestamp, includeTime = false) => {
+  if (!timestamp) return 'Baru saja';
+  try {
+    // Tangani berbagai format objek timestamp dari Firestore
+    const date = timestamp.toDate 
+      ? timestamp.toDate() 
+      : new Date(timestamp.toMillis?.() || timestamp.seconds * 1000);
+      
+    if (isNaN(date.getTime())) return 'Waktu tidak tercatat';
 
-<div class="container">
-    <h2>📸 Aplikasi Watermark Foto</h2>
-    
-    <div class="form-group full-width">
-        <label for="upload">1. Pilih Foto</label>
-        <input type="file" id="upload" accept="image/*">
-    </div>
+    return includeTime 
+      ? date.toLocaleString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+      : date.toLocaleDateString('id-ID');
+  } catch (e) {
+    return 'Waktu tidak tercatat';
+  }
+};
 
-    <div class="grid">
-        <div class="section-title">Data Manual</div>
-        <div class="form-group">
-            <label for="kegiatan">Kegiatan</label>
-            <input type="text" id="kegiatan" placeholder="Contoh: Rapat Desa / Penyaluran Bansos">
-        </div>
-        <div class="form-group">
-            <label for="waktu">Waktu</label>
-            <input type="text" id="waktu" placeholder="Contoh: Senin, 25 Mei 2026 - 10:00 WIB">
-        </div>
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState('dashboard'); // dashboard, signers, upload, verify
+  
+  // Data States
+  const [signers, setSigners] = useState([]);
+  const [documents, setDocuments] = useState([]);
+  
+  // Verification State
+  const [verifyDocId, setVerifyDocId] = useState(null);
+  const [verifiedDoc, setVerifiedDoc] = useState(null);
+  const [verifyLoading, setVerifyLoading] = useState(false);
 
-        <div class="section-title">Data Lokasi (Otomatis GPS)</div>
-        <div class="form-group full-width">
-            <button class="btn btn-location" id="btn-location" onclick="getLocation()">📍 Ambil Lokasi Otomatis</button>
-            <small style="color: #7f8c8d; display: block; text-align: center; margin-top: 5px;">Izinkan akses lokasi pada browser saat diminta.</small>
-        </div>
+  // Check URL for Verification on Load
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const verifyParam = urlParams.get('verify');
+    if (verifyParam) {
+      setVerifyDocId(verifyParam);
+      setView('verify');
+    }
+  }, []);
 
-        <div class="form-group">
-            <label for="jalan">Jalan</label>
-            <input type="text" id="jalan" placeholder="Jalan otomatis terisi">
-        </div>
-        <div class="form-group">
-            <label for="desa">Desa / Kelurahan</label>
-            <input type="text" id="desa" placeholder="Desa otomatis terisi">
-        </div>
-        <div class="form-group">
-            <label for="kecamatan">Kecamatan</label>
-            <input type="text" id="kecamatan" placeholder="Kecamatan otomatis terisi">
-        </div>
-        <div class="form-group">
-            <label for="kabupaten">Kabupaten / Kota</label>
-            <input type="text" id="kabupaten" placeholder="Kabupaten otomatis terisi">
-        </div>
-    </div>
-
-    <div class="canvas-container">
-        <canvas id="canvas" width="800" height="400"></canvas>
-    </div>
-
-    <button class="btn btn-download" onclick="downloadImage()">⬇️ Download Foto Ber-Watermark</button>
-    <button class="btn btn-share" onclick="shareToWhatsApp()">📲 Bagikan ke WhatsApp</button>
-</div>
-
-<script>
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-    let uploadedImage = null;
-
-    // Daftar ID input form
-    const inputIds = ['kegiatan', 'waktu', 'jalan', 'desa', 'kecamatan', 'kabupaten'];
-
-    // Tambahkan event listener agar setiap kali diketik, canvas langsung update
-    inputIds.forEach(id => {
-        document.getElementById(id).addEventListener('input', drawCanvas);
-    });
-
-    // Handle upload foto
-    document.getElementById('upload').addEventListener('change', function(event) {
-        const file = event.target.files[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            uploadedImage = new Image();
-            uploadedImage.onload = function() {
-                canvas.width = uploadedImage.width;
-                canvas.height = uploadedImage.height;
-                drawCanvas();
-            }
-            uploadedImage.src = e.target.result;
-        }
-        reader.readAsDataURL(file);
-    });
-
-    // Fitur Geolocation (Ambil Lokasi Otomatis)
-    function getLocation() {
-        const btn = document.getElementById('btn-location');
-        btn.innerHTML = '⏳ Sedang mencari lokasi...';
-        btn.disabled = true;
-
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(showPosition, showError, {
-                enableHighAccuracy: true,
-                timeout: 10000,
-                maximumAge: 0
-            });
+  // --- Auth Effect ---
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
         } else {
-            alert("Fitur lokasi tidak didukung oleh browser ini.");
-            resetLocationBtn();
+          await signInAnonymously(auth);
         }
+      } catch (error) {
+        console.error("Auth error:", error);
+        setLoading(false); // Pastikan layar memuat hilang jika error total
+      }
+    };
+    
+    initAuth();
+
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      if (currentUser) {
+        setUser(currentUser);
+        setLoading(false);
+      } else {
+        setUser(null);
+      }
+    });
+    
+    return () => unsubscribe();
+  }, []);
+
+  // --- Data Fetching Effect ---
+  useEffect(() => {
+    if (!user) return;
+
+    // 1. Fetch Signers (Private Data)
+    const signersRef = collection(db, 'artifacts', appId, 'users', user.uid, 'signers');
+    const unsubSigners = onSnapshot(signersRef, (snapshot) => {
+      const signersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setSigners(signersData);
+    }, (error) => console.error("Error fetching signers:", error));
+
+    // 2. Fetch Documents (Public Data - so anyone scanning QR can see it)
+    const docsRef = collection(db, 'artifacts', appId, 'public', 'data', 'documents');
+    const unsubDocs = onSnapshot(docsRef, (snapshot) => {
+      const docsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Sort aman agar timestamp null/objek terstruktur ditangani dengan baik
+      docsData.sort((a, b) => {
+        const timeA = a.timestamp?.toMillis?.() || a.timestamp?.seconds || 0;
+        const timeB = b.timestamp?.toMillis?.() || b.timestamp?.seconds || 0;
+        return timeB - timeA;
+      });
+      setDocuments(docsData);
+    }, (error) => console.error("Error fetching docs:", error));
+
+    return () => {
+      unsubSigners();
+      unsubDocs();
+    };
+  }, [user]);
+
+  // --- Verification Fetching ---
+  useEffect(() => {
+    if (view === 'verify' && verifyDocId && user) {
+      fetchVerifiedDoc(verifyDocId);
+    }
+  }, [view, verifyDocId, user]);
+
+  const fetchVerifiedDoc = async (docId) => {
+    setVerifyLoading(true);
+    try {
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'documents', docId);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        setVerifiedDoc({ id: docSnap.id, ...docSnap.data() });
+      } else {
+        setVerifiedDoc(null);
+      }
+    } catch (error) {
+      console.error("Verification error:", error);
+      setVerifiedDoc(null);
+    }
+    setVerifyLoading(false);
+  };
+
+  if (loading) {
+    return <div className="flex items-center justify-center h-screen bg-gray-50 text-blue-600 font-semibold">Memuat Sistem...</div>;
+  }
+
+  // Jika URL mengarah langsung ke verifikasi, lewati pemeriksaan user agar tetap bisa dirender
+  if (view === 'verify' && new URLSearchParams(window.location.search).get('verify')) {
+    return <VerificationView doc={verifiedDoc} loading={verifyLoading} />;
+  }
+
+  // Lindungi render komponen di bawah ini agar user.uid selalu ada
+  if (!user) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-gray-50 p-6 text-center">
+        <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
+        <h2 className="text-xl font-bold text-gray-800">Gagal Mengautentikasi</h2>
+        <p className="text-gray-600 mt-2">Sistem gagal memulai sesi Anda. Harap muat ulang (refresh) halaman ini.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-screen bg-gray-100 font-sans">
+      {/* Sidebar */}
+      <aside className="w-64 bg-slate-900 text-white flex flex-col shadow-xl">
+        <div className="p-6 border-b border-slate-700 flex items-center space-x-3">
+          <QrCode className="w-8 h-8 text-blue-400" />
+          <span className="text-xl font-bold">SignQR Pro</span>
+        </div>
+        <nav className="flex-1 p-4 space-y-2">
+          <button 
+            onClick={() => setView('dashboard')}
+            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${view === 'dashboard' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
+          >
+            <Search className="w-5 h-5" />
+            <span>Dashboard</span>
+          </button>
+          <button 
+            onClick={() => setView('upload')}
+            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${view === 'upload' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
+          >
+            <Upload className="w-5 h-5" />
+            <span>Buat Tanda Tangan</span>
+          </button>
+          <button 
+            onClick={() => setView('signers')}
+            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${view === 'signers' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
+          >
+            <Users className="w-5 h-5" />
+            <span>Database Pejabat</span>
+          </button>
+          <button 
+            onClick={() => { setVerifyDocId(null); setVerifiedDoc(null); setView('verify'); }}
+            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${view === 'verify' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
+          >
+            <ShieldCheck className="w-5 h-5" />
+            <span>Verifikasi Manual</span>
+          </button>
+        </nav>
+        <div className="p-4 border-t border-slate-700 text-xs text-slate-500">
+          ID Pengguna: {user.uid.substring(0, 8)}...
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 overflow-y-auto p-8">
+        {view === 'dashboard' && <Dashboard documents={documents} signers={signers} />}
+        {view === 'signers' && <SignersManager user={user} signers={signers} />}
+        {view === 'upload' && <UploadDocument user={user} signers={signers} setView={setView} />}
+        {view === 'verify' && !new URLSearchParams(window.location.search).get('verify') && (
+          <div className="max-w-2xl mx-auto">
+            <h2 className="text-2xl font-bold text-gray-800 mb-6">Verifikasi Dokumen Manual</h2>
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mb-6 flex space-x-4">
+              <input 
+                type="text" 
+                placeholder="Masukkan ID Dokumen dari QR..." 
+                className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                value={verifyDocId || ''}
+                onChange={(e) => setVerifyDocId(e.target.value)}
+              />
+              <button 
+                onClick={() => fetchVerifiedDoc(verifyDocId)}
+                className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 flex items-center"
+              >
+                <Search className="w-4 h-4 mr-2" /> Cek
+              </button>
+            </div>
+            {/* Menggunakan operator ternary agar objek tidak pernah di-render langsung */}
+            {(verifiedDoc || verifyLoading) ? <VerificationView doc={verifiedDoc} loading={verifyLoading} isEmbedded={true} /> : null}
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+// ==========================================
+// VIEW COMPONENTS
+// ==========================================
+
+function Dashboard({ documents, signers }) {
+  return (
+    <div className="max-w-6xl mx-auto">
+      <h1 className="text-3xl font-bold text-gray-800 mb-8">Dashboard Arsip</h1>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center space-x-4">
+          <div className="p-4 bg-blue-100 text-blue-600 rounded-full">
+            <FileText className="w-8 h-8" />
+          </div>
+          <div>
+            <p className="text-sm text-gray-500 font-medium">Total Dokumen TTD</p>
+            <p className="text-3xl font-bold text-gray-800">{documents.length}</p>
+          </div>
+        </div>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center space-x-4">
+          <div className="p-4 bg-emerald-100 text-emerald-600 rounded-full">
+            <Users className="w-8 h-8" />
+          </div>
+          <div>
+            <p className="text-sm text-gray-500 font-medium">Total Penanda Tangan</p>
+            <p className="text-3xl font-bold text-gray-800">{signers.length}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="p-6 border-b border-gray-100">
+          <h2 className="text-lg font-bold text-gray-800">Arsip Surat Terbaru</h2>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-gray-50 text-gray-500 text-sm">
+                <th className="p-4 border-b font-medium">Judul Surat</th>
+                <th className="p-4 border-b font-medium">Penanda Tangan</th>
+                <th className="p-4 border-b font-medium">Tanggal</th>
+                <th className="p-4 border-b font-medium text-center">QR Code</th>
+              </tr>
+            </thead>
+            <tbody>
+              {documents.length === 0 ? (
+                <tr>
+                  <td colSpan="4" className="p-8 text-center text-gray-500">Belum ada dokumen yang diarsipkan.</td>
+                </tr>
+              ) : (
+                documents.map(doc => (
+                  <tr key={doc.id} className="hover:bg-gray-50">
+                    <td className="p-4 border-b font-medium text-gray-800">{doc.title}</td>
+                    <td className="p-4 border-b text-gray-600">
+                      {doc.signerName}
+                      <span className="block text-xs text-gray-400">{doc.signerRole}</span>
+                    </td>
+                    <td className="p-4 border-b text-gray-600">
+                      {formatTimestamp(doc.timestamp)}
+                    </td>
+                    <td className="p-4 border-b text-center">
+                      <div 
+                        onClick={() => {
+                          // Simulasi scan: langsung arahkan ke halaman verifikasi
+                          window.history.pushState({}, '', `?verify=${doc.id}`);
+                          window.location.reload();
+                        }}
+                        className="cursor-pointer"
+                        title="Klik untuk simulasi Scan QR"
+                      >
+                        <img 
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=10&data=${encodeURIComponent(window.location.origin + window.location.pathname + '?verify=' + doc.id)}`} 
+                          alt="QR Code Mini"
+                          className="w-12 h-12 mx-auto rounded shadow-sm border hover:scale-[3] transition-transform origin-center relative z-10"
+                        />
+                        <span className="text-[10px] text-blue-500 hover:underline mt-1 block">Tes Scan</span>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SignersManager({ user, signers }) {
+  const [name, setName] = useState('');
+  const [role, setRole] = useState('');
+  const [nik, setNik] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleAddSigner = async (e) => {
+    e.preventDefault();
+    if (!name || !role || !user) return;
+    setLoading(true);
+    try {
+      const signersRef = collection(db, 'artifacts', appId, 'users', user.uid, 'signers');
+      await addDoc(signersRef, {
+        name,
+        role,
+        nik,
+        createdAt: serverTimestamp()
+      });
+      setName(''); setRole(''); setNik('');
+    } catch (error) {
+      console.error("Error adding signer:", error);
+    }
+    setLoading(false);
+  };
+
+  const handleDelete = async (id) => {
+    if (!user) return;
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'signers', id));
+    } catch (error) {
+      console.error("Error deleting:", error);
+    }
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto">
+      <h2 className="text-2xl font-bold text-gray-800 mb-6">Database Pejabat / Pemberi Tanda Tangan</h2>
+      
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        {/* Form Tambah */}
+        <div className="col-span-1 bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-fit">
+          <h3 className="font-semibold text-gray-700 mb-4 flex items-center">
+            <Plus className="w-4 h-4 mr-2" /> Tambah Baru
+          </h3>
+          <form onSubmit={handleAddSigner} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Nama Lengkap</label>
+              <input 
+                type="text" required value={name} onChange={e => setName(e.target.value)}
+                className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Jabatan / Posisi</label>
+              <input 
+                type="text" required value={role} onChange={e => setRole(e.target.value)}
+                className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">NIP / NIK (Opsional)</label>
+              <input 
+                type="text" value={nik} onChange={e => setNik(e.target.value)}
+                className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+              />
+            </div>
+            <button 
+              type="submit" disabled={loading}
+              className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 text-sm font-medium transition-colors disabled:opacity-50"
+            >
+              {loading ? 'Menyimpan...' : 'Simpan Data'}
+            </button>
+          </form>
+        </div>
+
+        {/* Daftar List */}
+        <div className="col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="p-4 border-b border-gray-100 bg-gray-50">
+            <h3 className="font-semibold text-gray-700">Daftar Penanda Tangan</h3>
+          </div>
+          <ul className="divide-y divide-gray-100">
+            {signers.length === 0 ? (
+              <li className="p-6 text-center text-gray-500 text-sm">Belum ada data. Silakan tambah di samping.</li>
+            ) : (
+              signers.map(s => (
+                <li key={s.id} className="p-4 flex items-center justify-between hover:bg-gray-50">
+                  <div>
+                    <p className="font-medium text-gray-800">{s.name}</p>
+                    <p className="text-sm text-gray-500">{s.role} {s.nik && `• NIP: ${s.nik}`}</p>
+                  </div>
+                  <button onClick={() => handleDelete(s.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-md">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UploadDocument({ user, signers, setView }) {
+  const [title, setTitle] = useState('');
+  const [signerId, setSignerId] = useState('');
+  const [fileBase64, setFileBase64] = useState('');
+  const [fileName, setFileName] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [successDoc, setSuccessDoc] = useState(null);
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Limit file size to ~700KB because Firestore document limit is 1MB
+    if (file.size > 700 * 1024) {
+      alert("Maaf, untuk versi demo ini ukuran file maksimal 700KB. Gunakan file PDF atau Gambar kecil.");
+      e.target.value = '';
+      return;
     }
 
-    async function showPosition(position) {
-        const lat = position.coords.latitude;
-        const lon = position.coords.longitude;
+    setFileName(file.name);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setFileBase64(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
 
-        try {
-            // Menggunakan API Nominatim dari OpenStreetMap (Gratis)
-            const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`);
-            const data = await response.json();
+  const handleUpload = async (e) => {
+    e.preventDefault();
+    if (!title || !signerId || !fileBase64 || !user) {
+       alert("Harap isi semua data dan unggah dokumen."); return;
+    }
 
-            if (data && data.address) {
-                const addr = data.address;
-                
-                // Pemetaan struktur alamat dari OpenStreetMap ke format Indonesia
-                document.getElementById('jalan').value = addr.road || addr.pedestrian || '-';
-                document.getElementById('desa').value = addr.village || addr.suburb || addr.neighbourhood || addr.hamlet || '-';
-                document.getElementById('kecamatan').value = addr.city_district || addr.town || addr.county || '-';
-                document.getElementById('kabupaten').value = addr.city || addr.county || addr.state_district || addr.region || '-';
+    setLoading(true);
+    try {
+      const selectedSigner = signers.find(s => s.id === signerId);
+      const docsRef = collection(db, 'artifacts', appId, 'public', 'data', 'documents');
+      
+      const docData = {
+        title,
+        signerId,
+        signerName: selectedSigner.name,
+        signerRole: selectedSigner.role,
+        uploaderId: user.uid,
+        fileName,
+        fileData: fileBase64, // Simulating Google Drive upload by storing base64
+        timestamp: serverTimestamp(),
+      };
 
-                drawCanvas(); // Update canvas setelah form terisi otomatis
-            } else {
-                alert("Alamat tidak ditemukan.");
-            }
-        } catch (error) {
-            console.error("Error fetching location:", error);
-            alert("Terjadi kesalahan saat mengambil nama alamat. Coba lagi atau isi manual.");
-        }
+      const docRef = await addDoc(docsRef, docData);
+      
+      setSuccessDoc({ id: docRef.id, ...docData });
+      setTitle(''); setSignerId(''); setFileBase64(''); setFileName('');
+    } catch (error) {
+      console.error("Upload error:", error);
+      alert("Gagal mengunggah dokumen.");
+    }
+    setLoading(false);
+  };
+
+  // Helper to generate verification URL
+  const getVerifyUrl = (docId) => {
+    const origin = window.location.origin;
+    const path = window.location.pathname;
+    return `${origin}${path}?verify=${docId}`;
+  };
+
+  if (successDoc) {
+    const qrUrl = getVerifyUrl(successDoc.id);
+    // Resolusi diperbesar menjadi 500x500 dan ditambahkan margin agar mudah di-scan
+    const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&margin=20&data=${encodeURIComponent(qrUrl)}`;
+
+    return (
+      <div className="max-w-2xl mx-auto bg-white p-8 rounded-xl shadow-sm border border-emerald-200 text-center">
+        <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
+          <CheckCircle className="w-8 h-8" />
+        </div>
+        <h2 className="text-2xl font-bold text-gray-800 mb-2">Tanda Tangan & QR Berhasil Dibuat!</h2>
+        <p className="text-gray-500 mb-6">Letakkan QR Code di bawah ini pada dokumen fisik/digital Anda.</p>
         
-        resetLocationBtn();
-    }
+        <div className="bg-gray-50 p-6 rounded-lg inline-block border border-gray-200 mb-6 w-full max-w-sm">
+          <img src={qrImageUrl} alt="QR Code" className="w-64 h-64 mx-auto shadow-sm bg-white p-2 rounded-lg mb-4" />
+          <div className="text-left bg-white p-3 rounded border text-xs text-gray-600">
+            <p className="font-semibold mb-1">ID Dokumen (Verifikasi Manual):</p>
+            <p className="font-mono text-blue-600 break-all">{successDoc.id}</p>
+          </div>
+        </div>
 
-    function showError(error) {
-        let msg = "Terjadi kesalahan yang tidak diketahui.";
-        switch(error.code) {
-            case error.PERMISSION_DENIED:
-                msg = "Anda menolak permintaan akses lokasi. Izinkan di pengaturan browser Anda.";
-                break;
-            case error.POSITION_UNAVAILABLE:
-                msg = "Informasi lokasi tidak tersedia (GPS tidak aktif / sinyal lemah).";
-                break;
-            case error.TIMEOUT:
-                msg = "Waktu permintaan lokasi habis.";
-                break;
-        }
-        alert(msg);
-        resetLocationBtn();
-    }
+        <div className="space-y-4 max-w-sm mx-auto">
+          <button 
+            onClick={() => window.open(qrUrl, '_blank')}
+            className="w-full bg-emerald-600 text-white py-3 rounded-lg hover:bg-emerald-700 font-medium transition-colors flex items-center justify-center"
+          >
+            <Eye className="w-5 h-5 mr-2" />
+            Simulasi Scan (Buka Link Verifikasi)
+          </button>
+          <button 
+            onClick={() => {
+              const link = document.createElement('a');
+              link.href = qrImageUrl;
+              link.download = `QR_${successDoc.title}.png`;
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+            }}
+            className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 font-medium transition-colors"
+          >
+            Unduh Gambar QR Code
+          </button>
+          <button 
+            onClick={() => setSuccessDoc(null)}
+            className="w-full bg-gray-100 text-gray-700 py-3 rounded-lg hover:bg-gray-200 font-medium transition-colors"
+          >
+            Buat Dokumen Lain
+          </button>
+        </div>
+      </div>
+    );
+  }
 
-    function resetLocationBtn() {
-        const btn = document.getElementById('btn-location');
-        btn.innerHTML = '📍 Ambil Lokasi Otomatis';
-        btn.disabled = false;
-    }
+  return (
+    <div className="max-w-2xl mx-auto">
+      <h2 className="text-2xl font-bold text-gray-800 mb-6">Arsipkan & Buat QR Tanda Tangan</h2>
+      
+      {signers.length === 0 ? (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-lg flex items-center">
+          <AlertCircle className="w-5 h-5 mr-3" />
+          <div>
+            <p className="font-semibold">Belum ada data Pejabat/Penanda Tangan.</p>
+            <p className="text-sm">Silakan tambahkan data di menu Database Pejabat terlebih dahulu.</p>
+          </div>
+        </div>
+      ) : (
+        <form onSubmit={handleUpload} className="bg-white p-8 rounded-xl shadow-sm border border-gray-100 space-y-6">
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">Judul Surat / Dokumen</label>
+            <input 
+              type="text" required value={title} onChange={e => setTitle(e.target.value)}
+              placeholder="Cth: Surat Keputusan Direksi No. 123"
+              className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">Pilih Pemberi Tanda Tangan</label>
+            <select 
+              required value={signerId} onChange={e => setSignerId(e.target.value)}
+              className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+            >
+              <option value="" disabled>-- Pilih Pejabat --</option>
+              {signers.map(s => (
+                <option key={s.id} value={s.id}>{s.name} - {s.role}</option>
+              ))}
+            </select>
+          </div>
 
-    function getLokasiString() {
-        const jalan = document.getElementById('jalan').value || '-';
-        const desa = document.getElementById('desa').value || '-';
-        const kec = document.getElementById('kecamatan').value || '-';
-        const kab = document.getElementById('kabupaten').value || '-';
-        const bagianLokasi = [jalan, `Ds. ${desa}`, `Kec. ${kec}`, `Kab. ${kab}`].filter(item => !item.includes('-'));
-        return bagianLokasi.length > 0 ? bagianLokasi.join(', ') : '-';
-    }
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">Unggah Arsip Surat (PDF/Img)</label>
+            <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:bg-gray-50 transition-colors">
+              <input 
+                type="file" 
+                accept=".pdf,image/*" 
+                onChange={handleFileChange} 
+                className="hidden" 
+                id="file-upload"
+              />
+              <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center">
+                <Upload className="w-10 h-10 text-gray-400 mb-3" />
+                <span className="text-blue-600 font-medium">Klik untuk pilih file</span>
+                <span className="text-xs text-gray-500 mt-1">Maks. 700KB (Untuk demo)</span>
+                {fileName && <span className="mt-4 text-sm font-semibold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">{fileName}</span>}
+              </label>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              *Dalam sistem produksi nyata, file ini akan disimpan ke Google Drive / Cloud Storage secara otomatis.
+            </p>
+          </div>
 
-    function drawCanvas() {
-        if (!uploadedImage) {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = '#7f8c8d';
-            ctx.font = '20px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText('Preview foto akan muncul di sini', canvas.width / 2, canvas.height / 2);
-            return;
-        }
+          <button 
+            type="submit" disabled={loading}
+            className="w-full bg-slate-900 text-white py-4 rounded-lg hover:bg-slate-800 font-semibold transition-colors disabled:opacity-50 text-lg flex justify-center items-center"
+          >
+            {loading ? 'Memproses...' : (
+              <>
+                <QrCode className="w-5 h-5 mr-2" /> Hasilkan QR Code Tanda Tangan
+              </>
+            )}
+          </button>
+        </form>
+      )}
+    </div>
+  );
+}
 
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(uploadedImage, 0, 0);
+function VerificationView({ doc, loading, isEmbedded = false }) {
+  if (loading) {
+    return (
+      <div className={`flex flex-col items-center justify-center ${isEmbedded ? 'py-12' : 'h-screen bg-gray-50'}`}>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+        <p className="text-gray-600 font-medium">Memverifikasi Dokumen...</p>
+      </div>
+    );
+  }
 
-        const kegiatan = document.getElementById('kegiatan').value || '-';
-        const waktu = document.getElementById('waktu').value || '-';
-        const lokasi = getLokasiString();
+  if (!doc) {
+    return (
+      <div className={`flex flex-col items-center justify-center ${isEmbedded ? 'py-12' : 'h-screen bg-gray-50'}`}>
+        <div className="bg-red-100 p-4 rounded-full mb-4">
+          <AlertCircle className="w-12 h-12 text-red-600" />
+        </div>
+        <h2 className="text-2xl font-bold text-gray-800 mb-2">Dokumen Tidak Ditemukan</h2>
+        <p className="text-gray-600 max-w-md text-center">QR Code tidak valid atau dokumen telah dihapus dari sistem arsip.</p>
+      </div>
+    );
+  }
 
-        const fontSize = Math.max(canvas.height / 35, 20); 
-        ctx.font = `bold ${fontSize}px Arial`;
-        ctx.textBaseline = 'bottom';
-        ctx.textAlign = 'left';
+  return (
+    <div className={`${isEmbedded ? '' : 'min-h-screen bg-slate-50 py-12 px-4'}`}>
+      <div className="max-w-3xl mx-auto">
+        {!isEmbedded && (
+          <div className="text-center mb-8">
+            <h1 className="text-2xl font-bold text-slate-800 flex justify-center items-center">
+              <ShieldCheck className="w-8 h-8 text-emerald-500 mr-2" />
+              Verifikasi Tanda Tangan Digital
+            </h1>
+            <p className="text-slate-500 mt-2">Sistem Pemeriksaan Keaslian Dokumen</p>
+          </div>
+        )}
 
-        const lines = [
-            `Waktu    : ${waktu}`,
-            `Lokasi    : ${lokasi}`,
-            `Kegiatan : ${kegiatan}`
-        ];
+        <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-100">
+          {/* Status Banner */}
+          <div className="bg-emerald-500 p-6 text-white text-center">
+            <CheckCircle className="w-16 h-16 mx-auto mb-3 opacity-90" />
+            <h2 className="text-2xl font-bold">Dokumen Valid & Resmi</h2>
+            <p className="text-emerald-100 mt-1">Tanda tangan digital tercatat dalam sistem kami.</p>
+          </div>
 
-        const padding = fontSize;
-        const lineSpacing = fontSize * 1.5;
-        
-        // HAPUS Latar Belakang Hitam Transparan
-        // ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-        // ctx.fillRect(0, canvas.height - boxHeight - padding, canvas.width, boxHeight + padding * 2);
-
-        // Tambahkan efek stroke (garis tepi) hitam agar teks terbaca di latar belakang apapun
-        ctx.lineWidth = fontSize / 8;
-        ctx.strokeStyle = 'black';
-
-        let startY = canvas.height - padding;
-        
-        lines.reverse().forEach((line, index) => {
-            if (index === lines.length - 1) {
-                ctx.fillStyle = '#f1c40f'; // Warna kuning untuk judul kegiatan
-            } else {
-                ctx.fillStyle = '#ffffff'; // Warna putih untuk lokasi & waktu
-            }
-            const y = startY - (index * lineSpacing);
-            // Gambar garis tepi (stroke) dulu, baru teks isian (fill)
-            ctx.strokeText(line, padding, y);
-            ctx.fillText(line, padding, y);
-        });
-    }
-
-    function downloadImage() {
-        if (!uploadedImage) {
-            alert('Silakan upload foto terlebih dahulu!');
-            return;
-        }
-        const link = document.createElement('a');
-        link.download = 'Foto_Kegiatan_Watermark.png';
-        link.href = canvas.toDataURL('image/png');
-        link.click();
-        return true; // Mengembalikan nilai true untuk menandakan download berhasil dimulai
-    }
-
-    function shareToWhatsApp() {
-        if (!uploadedImage) {
-            alert('Silakan upload foto dan isi data terlebih dahulu!');
-            return;
-        }
-
-        // Pastikan pengguna sudah mendownload gambar terlebih dahulu
-        const confirmDownload = confirm("PENTING: Gambar harus di-download terlebih dahulu sebelum dibagikan ke WhatsApp. Klik OK untuk download gambar, lalu setelah WhatsApp terbuka, lampirkan gambar yang baru saja Anda download.");
-        
-        if (confirmDownload) {
-            downloadImage(); // Memicu download otomatis
-
-            const kegiatan = document.getElementById('kegiatan').value || '-';
-            const waktu = document.getElementById('waktu').value || '-';
-            const lokasi = getLokasiString();
-
-            // Buat pesan teks
-            let message = `*Laporan Kegiatan*\n\n`;
-            message += `*Kegiatan:* ${kegiatan}\n`;
-            message += `*Waktu:* ${waktu}\n`;
-            message += `*Lokasi:* ${lokasi}\n\n`;
-            message += `_(Lampirkan foto kegiatan yang telah di-download)_`;
-
-            // Encode pesan untuk URL
-            const encodedMessage = encodeURIComponent(message);
+          {/* Details */}
+          <div className="p-8">
+            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-6">Informasi Surat</h3>
             
-            // Buka WhatsApp di tab baru (gunakan timeout agar download sempat berjalan)
-            setTimeout(() => {
-                window.open(`https://wa.me/?text=${encodedMessage}`, '_blank');
-            }, 1000);
-        }
-    }
+            <div className="space-y-6">
+              <div>
+                <p className="text-sm text-slate-500">Judul Dokumen</p>
+                <p className="text-xl font-bold text-slate-800">{doc.title}</p>
+              </div>
 
-    drawCanvas();
-</script>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                <div>
+                  <p className="text-sm text-slate-500">Ditandatangani Oleh</p>
+                  <p className="text-lg font-bold text-slate-800">{doc.signerName}</p>
+                  <p className="text-sm font-medium text-blue-600">{doc.signerRole}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-slate-500">Waktu Tanda Tangan</p>
+                  <p className="font-medium text-slate-800">
+                    {/* Menggunakan format waktu yang aman */}
+                    {formatTimestamp(doc.timestamp, true)}
+                  </p>
+                </div>
+              </div>
 
-</body>
-</html>
+              <div>
+                <p className="text-sm text-slate-500 mb-2">ID Referensi Sistem</p>
+                <p className="font-mono text-xs text-slate-400 bg-slate-100 px-3 py-2 rounded break-all">
+                  {doc.id}
+                </p>
+              </div>
+            </div>
+
+            <hr className="my-8 border-slate-100" />
+
+            {/* Document Preview */}
+            <div>
+              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Arsip Dokumen</h3>
+              <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 flex flex-col items-center justify-center p-8">
+                <FileText className="w-16 h-16 text-slate-300 mb-4" />
+                <p className="font-medium text-slate-700">{doc.fileName}</p>
+                <p className="text-sm text-slate-500 mb-6">Dokumen tersimpan dengan aman di Cloud.</p>
+                
+                <a 
+                  href={doc.fileData} 
+                  download={doc.fileName}
+                  className="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition flex items-center shadow-md"
+                >
+                  <Eye className="w-5 h-5 mr-2" />
+                  Lihat / Unduh Dokumen
+                </a>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
