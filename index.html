@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Watermark Foto Kegiatan</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        h2 {
+            text-align: center;
+            color: #2c3e50;
+            margin-top: 0;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group.full-width {
+            grid-column: span 2;
+        }
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #34495e;
+            font-size: 14px;
+        }
+        input[type="text"], input[type="file"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccd1d9;
+            border-radius: 5px;
+            box-sizing: border-box;
+            font-size: 14px;
+        }
+        input[type="text"]:focus {
+            border-color: #3498db;
+            outline: none;
+        }
+        .canvas-container {
+            margin-top: 20px;
+            text-align: center;
+        }
+        canvas {
+            max-width: 100%;
+            height: auto;
+            border: 1px dashed #bdc3c7;
+            border-radius: 5px;
+            background-color: #ecf0f1;
+        }
+        .btn-download {
+            display: block;
+            width: 100%;
+            background-color: #27ae60;
+            color: white;
+            text-align: center;
+            padding: 12px;
+            margin-top: 20px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+        .btn-download:hover {
+            background-color: #2ecc71;
+        }
+        
+        /* Responsive for mobile */
+        @media (max-width: 600px) {
+            .grid { grid-template-columns: 1fr; }
+            .form-group.full-width { grid-column: span 1; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>📸 Aplikasi Watermark Foto</h2>
+    
+    <div class="form-group full-width">
+        <label for="upload">1. Pilih Foto</label>
+        <input type="file" id="upload" accept="image/*">
+    </div>
+
+    <div class="grid">
+        <div class="form-group">
+            <label for="kegiatan">Kegiatan (Manual)</label>
+            <input type="text" id="kegiatan" placeholder="Contoh: Rapat Desa / Penyaluran Bansos">
+        </div>
+        <div class="form-group">
+            <label for="waktu">Waktu (Manual)</label>
+            <input type="text" id="waktu" placeholder="Contoh: Senin, 25 Mei 2026 - 10:00 WIB">
+        </div>
+        <div class="form-group">
+            <label for="jalan">Jalan</label>
+            <input type="text" id="jalan" placeholder="Contoh: Jl. Merdeka No. 10">
+        </div>
+        <div class="form-group">
+            <label for="desa">Desa / Kelurahan</label>
+            <input type="text" id="desa" placeholder="Contoh: Suka Makmur">
+        </div>
+        <div class="form-group">
+            <label for="kecamatan">Kecamatan</label>
+            <input type="text" id="kecamatan" placeholder="Contoh: Suka Jaya">
+        </div>
+        <div class="form-group">
+            <label for="kabupaten">Kabupaten / Kota</label>
+            <input type="text" id="kabupaten" placeholder="Contoh: Bandung">
+        </div>
+    </div>
+
+    <div class="canvas-container">
+        <canvas id="canvas" width="800" height="400"></canvas>
+    </div>
+
+    <button class="btn-download" onclick="downloadImage()">⬇️ Download Foto Ber-Watermark</button>
+</div>
+
+<script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    let uploadedImage = null;
+
+    // Daftar ID input form
+    const inputIds = ['kegiatan', 'waktu', 'jalan', 'desa', 'kecamatan', 'kabupaten'];
+
+    // Tambahkan event listener agar setiap kali diketik, canvas langsung update
+    inputIds.forEach(id => {
+        document.getElementById(id).addEventListener('input', drawCanvas);
+    });
+
+    // Handle upload foto
+    document.getElementById('upload').addEventListener('change', function(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            uploadedImage = new Image();
+            uploadedImage.onload = function() {
+                // Sesuaikan ukuran canvas dengan foto asli
+                canvas.width = uploadedImage.width;
+                canvas.height = uploadedImage.height;
+                drawCanvas();
+            }
+            uploadedImage.src = e.target.result;
+        }
+        reader.readAsDataURL(file);
+    });
+
+    function drawCanvas() {
+        if (!uploadedImage) {
+            // Jika belum ada foto, beri teks petunjuk di canvas kosong
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#7f8c8d';
+            ctx.font = '20px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Preview foto akan muncul di sini', canvas.width / 2, canvas.height / 2);
+            return;
+        }
+
+        // Gambar foto ke canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(uploadedImage, 0, 0);
+
+        // Ambil nilai dari input form
+        const kegiatan = document.getElementById('kegiatan').value || '-';
+        const waktu = document.getElementById('waktu').value || '-';
+        const jalan = document.getElementById('jalan').value || '-';
+        const desa = document.getElementById('desa').value || '-';
+        const kec = document.getElementById('kecamatan').value || '-';
+        const kab = document.getElementById('kabupaten').value || '-';
+
+        // Gabungkan teks lokasi
+        const lokasi = `${jalan}, Ds. ${desa}, Kec. ${kec}, Kab. ${kab}`;
+
+        // Pengaturan Font agar responsif terhadap ukuran foto
+        const fontSize = Math.max(canvas.height / 35, 20); 
+        ctx.font = `bold ${fontSize}px Arial`;
+        ctx.textBaseline = 'bottom';
+        ctx.textAlign = 'left';
+
+        // Susunan baris teks (dari bawah ke atas)
+        const lines = [
+            `Waktu    : ${waktu}`,
+            `Lokasi    : ${lokasi}`,
+            `Kegiatan : ${kegiatan}`
+        ];
+
+        const padding = fontSize;
+        const lineSpacing = fontSize * 1.5;
+        const boxHeight = (lines.length * lineSpacing) + padding;
+        
+        // Buat background semi-transparan hitam agar teks selalu terbaca di foto terang/gelap
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillRect(0, canvas.height - boxHeight - padding, canvas.width, boxHeight + padding * 2);
+
+        // Tulis teks berwarna putih dan kuning (untuk kegiatan)
+        let startY = canvas.height - padding;
+        
+        lines.reverse().forEach((line, index) => {
+            if (index === lines.length - 1) {
+                ctx.fillStyle = '#f1c40f'; // Warna kuning untuk judul kegiatan
+            } else {
+                ctx.fillStyle = '#ffffff'; // Warna putih untuk lokasi & waktu
+            }
+            ctx.fillText(line, padding, startY - (index * lineSpacing));
+        });
+    }
+
+    // Fungsi untuk download foto
+    function downloadImage() {
+        if (!uploadedImage) {
+            alert('Silakan upload foto terlebih dahulu!');
+            return;
+        }
+        const link = document.createElement('a');
+        link.download = 'Foto_Kegiatan_Watermark.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+    }
+
+    // Render awal canvas kosong
+    drawCanvas();
+</script>
+
+</body>
+</html>
